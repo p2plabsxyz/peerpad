@@ -1,5 +1,6 @@
 import { update, showSpinner, basicCSS } from './codeEditor.js';
 import { $, uploadButton, protocolSelect, fetchButton, fetchCidInput } from './common.js';
+import { STARTER_PROJECT } from './starter.js';
 
 // Safe localStorage access helpers
 function safeLocalStorageGet(key) {
@@ -21,6 +22,7 @@ function safeLocalStorageSet(key, value) {
 const DRIVE_NAME = 'p2p-editor';
 const DRAFT_DRIVE_NAME = 'p2p-editor-drafts';
 const DRAFT_FILE = 'draft.json';
+const STARTER_SEEDED_KEY = 'peerpad:starterSeeded';
 const DRIVE_LOOKUP_TIMEOUT_MS = 4000;
 const DRAFT_DRIVE_LOOKUP_TIMEOUT_MS = 2000;
 const DRIVE_LOOKUP_ATTEMPTS = 3;
@@ -172,11 +174,33 @@ export function scheduleDraftSave() {
     }, saveDelay);
 }
 
+// Fill the panes with a small working example the first time someone opens
+// PeerPad, so the preview has something in it and the three panes explain
+// themselves. Writing straight to .value goes through the editors and schedules
+// a draft save, so it behaves exactly like content the visitor typed.
+function applyStarterProject() {
+    htmlCodeArea.value = STARTER_PROJECT.html;
+    cssCodeArea.value = STARTER_PROJECT.css;
+    javascriptCodeArea.value = STARTER_PROJECT.javascript;
+    update();
+}
+
 async function loadDraft() {
     try {
         const driveUrl = await getDraftDriveUrl();
         const url = `${driveUrl}${DRAFT_FILE}`;
         const response = await fetch(url);
+        if (response.status === 404) {
+            // No draft on the drive. That is a first visit -- but it is also
+            // what Clear leaves behind, since clearDraft deletes the file, so
+            // only hand out the starter once per browser. Coming back to a demo
+            // you deliberately cleared would be worse than an empty pane.
+            if (!safeLocalStorageGet(STARTER_SEEDED_KEY)) {
+                safeLocalStorageSet(STARTER_SEEDED_KEY, '1');
+                applyStarterProject();
+            }
+            return;
+        }
         if (!response.ok) {
             return;
         }

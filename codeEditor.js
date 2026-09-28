@@ -146,10 +146,13 @@ export function update() {
     </html>
     `;
     
-    let iframeDoc = iframe.contentWindow.document;
-    iframeDoc.open();
-    iframeDoc.write(iframeContent);
-    iframeDoc.close();
+    // srcdoc rather than document.write. write() reuses the preview's existing
+    // window, so a top-level const, let or class from the previous keystroke is
+    // still bound and the next rebuild dies on "already been declared" -- which
+    // silently froze the preview for anyone not writing var. A srcdoc
+    // navigation hands the preview a fresh global every time, and clears any
+    // timers the last version left running.
+    iframe.srcdoc = iframeContent;
 }
 
 // Show or hide the loading spinner

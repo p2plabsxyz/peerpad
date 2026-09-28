@@ -18,12 +18,67 @@ function safeLocalStorageSet(key, value) {
     }
 }
 
+const DRIVE_NAME = 'p2p-editor';
 const DRAFT_DRIVE_NAME = 'p2p-editor-drafts';
 const DRAFT_FILE = 'draft.json';
+const DRIVE_LOOKUP_TIMEOUT_MS = 4000;
+const DRAFT_DRIVE_LOOKUP_TIMEOUT_MS = 2000;
+const DRIVE_LOOKUP_ATTEMPTS = 3;
+const DRIVE_LOOKUP_RETRY_DELAY_MS = 250;
 let draftDriveUrl = null;
+let draftDrivePending = null;
 let saveTimer = null;
 let lastDraftPayload = null;
 const saveDelay = 400;
+
+function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Without a timeout a silent hyper node leaves the caller waiting forever,
+// which is how the publish spinner ends up spinning with nothing behind it.
+async function fetchWithTimeout(url, options, timeoutMs) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+// Resolving a named drive is the first thing that touches the hyper node, and
+// the very first POST for a name it has never opened can hang or come back 500
+// while the SDK is still warming up. A later POST for the same name answers
+// immediately, so abandon a stalled attempt and ask again instead of failing
+// the whole publish on one cold call.
+async function resolveDriveUrl(name, timeoutMs) {
+    let lastError;
+    for (let attempt = 1; attempt <= DRIVE_LOOKUP_ATTEMPTS; attempt += 1) {
+        try {
+            const response = await fetchWithTimeout(
+                `hyper://localhost/?key=${encodeURIComponent(name)}`,
+                { method: 'POST' },
+                timeoutMs
+            );
+            if (!response.ok) {
+                throw new Error(`Failed to generate Hyperdrive key: ${response.statusText}`);
+            }
+            const url = (await response.text()).trim();
+            if (!url.startsWith('hyper://')) {
+                throw new Error(`Invalid Hyperdrive URL received: ${url}`);
+            }
+            return url;
+        } catch (error) {
+            lastError = error;
+            console.warn(`[resolveDriveUrl] Attempt ${attempt}/${DRIVE_LOOKUP_ATTEMPTS} for "${name}" failed:`, error);
+            if (attempt < DRIVE_LOOKUP_ATTEMPTS) {
+                await delay(DRIVE_LOOKUP_RETRY_DELAY_MS);
+            }
+        }
+    }
+    throw lastError;
+}
 
 const htmlCodeArea = $('#htmlCode');
 const cssCodeArea = $('#cssCode');
@@ -50,14 +105,22 @@ function toggleTitleInput() {
 }
 
 async function getDraftDriveUrl() {
-    if (!draftDriveUrl) {
-        const response = await fetch(`hyper://localhost/?key=${encodeURIComponent(DRAFT_DRIVE_NAME)}`, { method: 'POST' });
-        if (!response.ok) {
-            throw new Error(`Failed to generate Hyperdrive key: ${response.statusText}`);
-        }
-        draftDriveUrl = await response.text();
+    if (draftDriveUrl) {
+        return draftDriveUrl;
     }
-    return draftDriveUrl;
+    // loadDraft and the first autosave both reach for the drive on startup;
+    // share one lookup so they do not open the same drive twice.
+    if (!draftDrivePending) {
+        draftDrivePending = resolveDriveUrl(DRAFT_DRIVE_NAME, DRAFT_DRIVE_LOOKUP_TIMEOUT_MS)
+            .then((url) => {
+                draftDriveUrl = url;
+                return url;
+            })
+            .finally(() => {
+                draftDrivePending = null;
+            });
+    }
+    return draftDrivePending;
 }
 
 function buildDraftPayload() {
@@ -251,17 +314,20 @@ async function uploadFile(file) {
     const protocol = protocolSelect.value;
     console.log(`[uploadFile] Uploading ${file.name}, protocol: ${protocol}`);
 
-    let url;
-    if (protocol === 'hyper') {
-        const hyperdriveUrl = await getOrCreateHyperdrive();
-        url = `${hyperdriveUrl}${encodeURIComponent(file.name)}`;
-        console.log(`[uploadFile] Hyper URL: ${url}`);
-    } else {
-        url = `ipfs://bafyaabakaieac/${encodeURIComponent(file.name)}?peerskyOrigin=${encodeURIComponent(window.location.href)}`;
-        console.log(`[uploadFile] IPFS URL: ${url}`);
-    }
-
     try {
+        let url;
+        if (protocol === 'hyper') {
+            // Resolved inside the try: a failed lookup used to escape past the
+            // finally below, leaving the spinner up and the error only in the
+            // console.
+            const driveUrl = await getOrCreateHyperdrive();
+            url = `${driveUrl}${encodeURIComponent(file.name)}`;
+            console.log(`[uploadFile] Hyper URL: ${url}`);
+        } else {
+            url = `ipfs://bafyaabakaieac/${encodeURIComponent(file.name)}?peerskyOrigin=${encodeURIComponent(window.location.href)}`;
+            console.log(`[uploadFile] IPFS URL: ${url}`);
+        }
+
         const response = await fetch(url, {
             method: 'PUT',
             body: file, // Send raw file bytes
@@ -289,23 +355,28 @@ async function uploadFile(file) {
 }
 
 let hyperdriveUrl = null;
+let hyperdrivePending = null;
 
 async function getOrCreateHyperdrive() {
-    if (!hyperdriveUrl) {
-        const name = 'p2p-editor';
-        try {
-            const response = await fetch(`hyper://localhost/?key=${encodeURIComponent(name)}`, { method: 'POST' });
-            if (!response.ok) {
-                throw new Error(`Failed to generate Hyperdrive key: ${response.statusText}`);
-            }
-            hyperdriveUrl = await response.text();
-            console.log(`[getOrCreateHyperdrive] Hyperdrive URL: ${hyperdriveUrl}`);
-        } catch (error) {
-            console.error('[getOrCreateHyperdrive] Error generating Hyperdrive key:', error);
-            throw error;
-        }
+    if (hyperdriveUrl) {
+        return hyperdriveUrl;
     }
-    return hyperdriveUrl;
+    if (!hyperdrivePending) {
+        hyperdrivePending = resolveDriveUrl(DRIVE_NAME, DRIVE_LOOKUP_TIMEOUT_MS)
+            .then((url) => {
+                hyperdriveUrl = url;
+                console.log(`[getOrCreateHyperdrive] Hyperdrive URL: ${url}`);
+                return url;
+            })
+            .catch((error) => {
+                console.error('[getOrCreateHyperdrive] Error generating Hyperdrive key:', error);
+                throw error;
+            })
+            .finally(() => {
+                hyperdrivePending = null;
+            });
+    }
+    return hyperdrivePending;
 }
 
 function addURL(url) {

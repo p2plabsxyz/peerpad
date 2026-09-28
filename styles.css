@@ -42,6 +42,8 @@ main {
     border-radius: 8px;
 }
 
+/* Kept for the pre-CodeMirror fallback: fromTextArea hides these once the
+   editors are up. */
 .grid-container > textarea {
     resize: none;
     font-size: 1.2rem;
@@ -50,6 +52,129 @@ main {
 #viewer {
     color: var(--browser-theme-text-color);
 }
+
+/* Code editors
+   CodeMirror replaces each textarea with its own element, so the panes are
+   styled here rather than on .grid-container > textarea. Token colours come in
+   two sets because Peersky ships both dark and light browser themes;
+   codeEditor.js picks one by measuring the resolved text colour. */
+.grid-container > .CodeMirror {
+    height: 100%;
+    padding: 0;
+    overflow: hidden; /* the editor scrolls itself; the cell must not double up */
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 1rem;
+    line-height: 1.55;
+    background: var(--browser-theme-background);
+    color: var(--cm-foreground);
+}
+
+.CodeMirror-lines {
+    padding: var(--gap) 0;
+}
+
+.CodeMirror-gutters {
+    border-right: 1px solid var(--cm-rule);
+    background: var(--cm-gutter-background);
+}
+
+.CodeMirror-linenumber {
+    color: var(--cm-line-number);
+    padding: 0 var(--gap) 0 var(--half-gap);
+}
+
+.CodeMirror-cursor {
+    border-left: 2px solid var(--browser-theme-text-color);
+}
+
+.CodeMirror-selected,
+.CodeMirror-focused .CodeMirror-selected,
+.CodeMirror-line::selection,
+.CodeMirror-line > span::selection,
+.CodeMirror-line > span > span::selection {
+    background: var(--cm-selection);
+}
+
+.CodeMirror-focused {
+    outline: 2px solid var(--browser-theme-text-color);
+}
+
+/* Selector shaped to outrank codemirror.min.css's own bracket colours. */
+div.CodeMirror span.CodeMirror-matchingbracket {
+    background: var(--cm-selection);
+    color: var(--cm-foreground);
+    font-weight: bold;
+}
+
+div.CodeMirror span.CodeMirror-nonmatchingbracket {
+    color: var(--cm-error);
+    font-weight: bold;
+}
+
+.CodeMirror-placeholder {
+    color: var(--cm-comment);
+}
+
+/* Dark browser themes (default, transparent) */
+:root,
+:root[data-cm-contrast="dark"] {
+    --cm-foreground: #e6edf3;
+    --cm-rule: rgba(255, 255, 255, 0.14);
+    --cm-gutter-background: rgba(255, 255, 255, 0.04);
+    --cm-line-number: rgba(230, 237, 243, 0.4);
+    --cm-selection: rgba(56, 139, 253, 0.35);
+    --cm-comment: #8b949e;
+    --cm-keyword: #ff7b72;
+    --cm-string: #a5d6ff;
+    --cm-number: #79c0ff;
+    --cm-tag: #7ee787;
+    --cm-attribute: #d2a8ff;
+    --cm-def: #ffa657;
+    --cm-property: #79c0ff;
+    --cm-error: #ffa198;
+}
+
+/* Light browser themes (light, cyan, green, yellow, violet) */
+:root[data-cm-contrast="light"] {
+    --cm-foreground: #24292f;
+    --cm-rule: rgba(0, 0, 0, 0.14);
+    --cm-gutter-background: rgba(0, 0, 0, 0.03);
+    --cm-line-number: rgba(36, 41, 47, 0.45);
+    --cm-selection: rgba(84, 174, 255, 0.35);
+    --cm-comment: #6a737d;
+    --cm-keyword: #cf222e;
+    --cm-string: #0a3069;
+    --cm-number: #0550ae;
+    --cm-tag: #116329;
+    --cm-attribute: #6639ba;
+    --cm-def: #953800;
+    --cm-property: #0550ae;
+    --cm-error: #82071e;
+}
+
+.cm-s-peerpad .cm-comment { color: var(--cm-comment); font-style: italic; }
+.cm-s-peerpad .cm-keyword,
+.cm-s-peerpad .cm-operator { color: var(--cm-keyword); }
+.cm-s-peerpad .cm-string,
+.cm-s-peerpad .cm-string-2 { color: var(--cm-string); }
+.cm-s-peerpad .cm-number,
+.cm-s-peerpad .cm-atom { color: var(--cm-number); }
+.cm-s-peerpad .cm-tag,
+.cm-s-peerpad .cm-tag.cm-bracket { color: var(--cm-tag); }
+.cm-s-peerpad .cm-attribute,
+.cm-s-peerpad .cm-qualifier { color: var(--cm-attribute); }
+.cm-s-peerpad .cm-def,
+.cm-s-peerpad .cm-variable-2,
+.cm-s-peerpad .cm-builtin { color: var(--cm-def); }
+.cm-s-peerpad .cm-property,
+.cm-s-peerpad .cm-variable-3,
+.cm-s-peerpad .cm-type { color: var(--cm-property); }
+.cm-s-peerpad .cm-variable,
+.cm-s-peerpad .cm-bracket,
+.cm-s-peerpad .cm-punctuation { color: var(--cm-foreground); }
+.cm-s-peerpad .cm-meta { color: var(--cm-comment); }
+.cm-s-peerpad .cm-link { color: var(--cm-number); text-decoration: underline; }
+.cm-s-peerpad .cm-error { color: var(--cm-error); }
 
 div textarea:focus {
     outline: 2px solid var(--browser-theme-text-color);
@@ -281,6 +406,10 @@ span:hover {
     .grid-container {
         grid-template-columns: 1fr; /* One column */
         grid-template-rows: repeat(4, 1fr); /* Four rows */
+    }
+
+    .grid-container > .CodeMirror {
+        font-size: 0.9rem;
     }
     
     #aiLogDialog {

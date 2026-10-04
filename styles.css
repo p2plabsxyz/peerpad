@@ -14,13 +14,22 @@ body, * {
     box-sizing: border-box;
 }
 
+/* The browser theme sets overflow: hidden on html and body, for the browser's
+   own window, so the page itself never scrolls. main does instead, or Publish,
+   Fetch, the list of uploads and Create with AI below the editors are cut off. */
 main {
     padding: var(--gap);
     height: 100vh;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
     background: var(--browser-theme-background);
     color: var(--browser-theme-text-color);
+}
+
+/* Its full height, rather than squeezed to make room for what comes after. */
+main > * {
+    flex: none;
 }
 
 .grid-container {
